@@ -33,13 +33,16 @@ export default async function handler(req, res) {
 
     const fileList = Array.isArray(rawFiles) ? rawFiles : [rawFiles];
 
-    // Google Auth Yapılandırması
-    const auth = new google.auth.GoogleAuth({
-      credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY),
-      scopes: ['https://www.googleapis.com/auth/drive.file'],
+    // Google OAuth2 Yapılandırması (kişisel Gmail hesabı adına yükleme)
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
+    oauth2Client.setCredentials({
+      refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
     });
 
-    const drive = google.drive({ version: 'v3', auth });
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
     // Drive'a yükleme işlemleri
@@ -57,7 +60,6 @@ export default async function handler(req, res) {
       return drive.files.create({
         requestBody: fileMetadata,
         media: media,
-        supportsAllDrives: true,
         fields: 'id',
       });
     });
