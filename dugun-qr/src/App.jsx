@@ -24,54 +24,68 @@ export default function App() {
     setProgress(0);
     setStatusMessage('Fotoğraflarınız yükleniyor, lütfen bekleyin...');
 
-    const formData = new FormData();
-    selectedFiles.forEach((file) => {
-      formData.append('file', file);
-    });
+    // Toplam bayt üzerinden genel ilerleme hesaplanır
+    const totalBytes = selectedFiles.reduce((sum, f) => sum + f.size, 0);
+    let uploadedBytes = 0;
 
     try {
-      await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/upload');
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
 
-        // Yükleme ilerlemesi (dosyalar tarayıcıdan sunucuya giderken)
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const percent = Math.round((event.loaded / event.total) * 100);
-            setProgress(percent);
-            // %100'e ulaşınca dosyalar sunucuya ulaştı, Drive'a aktarılıyor demektir
-            if (percent >= 100) {
-              setStatusMessage('Son işlemler yapılıyor, lütfen bekleyin...');
+        if (selectedFiles.length > 1) {
+          setStatusMessage(`Yükleniyor: ${i + 1} / ${selectedFiles.length} dosya`);
+        }
+
+        // 1) Sunucudan bu dosya için yükleme linki (resumable oturum) al
+        const sessionRes = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: file.name,
+            mimeType: file.type || 'application/octet-stream',
+          }),
+        });
+
+        if (!sessionRes.ok) {
+          const err = await sessionRes.json().catch(() => ({}));
+          throw new Error(err.error || 'Yükleme oturumu alınamadı.');
+        }
+
+        const { uploadUrl } = await sessionRes.json();
+
+        // 2) Dosyayı doğrudan Google'a yükle (Vercel'e uğramadan, boyut limiti yok)
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', uploadUrl);
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percent = Math.round(((uploadedBytes + event.loaded) / totalBytes) * 100);
+              setProgress(Math.min(percent, 100));
             }
-          }
-        };
+          };
 
-        xhr.onload = () => {
-          let result = {};
-          try {
-            result = JSON.parse(xhr.responseText);
-          } catch {
-            // yanıt JSON değilse boş bırak
-          }
-          if (xhr.status >= 200 && xhr.status < 300) {
-            setStatusMessage('🎉 Harika! Fotoğraflarınız başarıyla yüklendi. Çok teşekkür ederiz!');
-            setSelectedFiles([]);
-            resolve();
-          } else {
-            setStatusMessage(`❌ Bir hata oluştu: ${result.error || 'Tekrar deneyin.'}`);
-            reject(new Error(result.error || 'upload failed'));
-          }
-        };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              uploadedBytes += file.size;
+              resolve();
+            } else {
+              reject(new Error('Dosya yüklenemedi.'));
+            }
+          };
 
-        xhr.onerror = () => {
-          setStatusMessage('❌ Bağlantı hatası oluştu. Lütfen tekrar deneyin.');
-          reject(new Error('network error'));
-        };
+          xhr.onerror = () => reject(new Error('Bağlantı hatası oluştu.'));
 
-        xhr.send(formData);
-      });
-    } catch {
-      // durum mesajı yukarıda ayarlandı
+          xhr.send(file);
+        });
+      }
+
+      setProgress(100);
+      setStatusMessage('🎉 Harika! Fotoğraflarınız başarıyla yüklendi. Çok teşekkür ederiz!');
+      setSelectedFiles([]);
+    } catch (err) {
+      setStatusMessage(`❌ Bir hata oluştu: ${err.message || 'Tekrar deneyin.'}`);
     } finally {
       setUploading(false);
     }

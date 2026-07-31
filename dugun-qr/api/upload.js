@@ -1,13 +1,9 @@
 // api/upload.js
+// Büyük dosyalar (video) Vercel'in 4.5 MB istek limitine takılmasın diye
+// dosya baytları buradan GEÇMEZ. Bu fonksiyon sadece Google Drive'da bir
+// "resumable upload" oturumu açar ve tarayıcının doğrudan yükleyebileceği
+// geçici bir yükleme linki (uploadUrl) döner. Büyük dosya o linke gider.
 import { google } from 'googleapis';
-import formidable from 'formidable';
-import fs from 'fs';
-
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -15,25 +11,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const form = formidable({ multiples: true });
+    // Vercel JSON gövdesini otomatik ayrıştırır; string gelirse yine de çöz.
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
+    const { name, mimeType } = body;
 
-    // Formidable ile dosyaları ayrıştırıyoruz
-    const [fields, files] = await new Promise((resolve, reject) => {
-      form.parse(req, (err, fields, files) => {
-        if (err) reject(err);
-        resolve([fields, files]);
-      });
-    });
-
-    // Dosya(lar)ı güvenli bir şekilde diziye dönüştürüyoruz
-    const rawFiles = files.file;
-    if (!rawFiles) {
-      return res.status(400).json({ error: 'Yüklenecek dosya bulunamadı.' });
+    if (!name) {
+      return res.status(400).json({ error: 'Dosya adı gerekli.' });
     }
 
-    const fileList = Array.isArray(rawFiles) ? rawFiles : [rawFiles];
-
-    // Google OAuth2 Yapılandırması (kişisel Gmail hesabı adına yükleme)
+    // OAuth2 ile kendi Google hesabın adına yetkilen
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET
@@ -42,33 +28,36 @@ export default async function handler(req, res) {
       refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
     });
 
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const { token } = await oauth2Client.getAccessToken();
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-    // Drive'a yükleme işlemleri
-    const uploadPromises = fileList.map(async (file) => {
-      const fileMetadata = {
-        name: file.originalFilename || file.newFilename || `foto_${Date.now()}.jpg`,
-        parents: [folderId],
-      };
+    // Drive'da resumable oturumu başlat; dönen "Location" başlığı yükleme linkidir
+    const initRes = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Upload-Content-Type': mimeType || 'application/octet-stream',
+        },
+        body: JSON.stringify({
+          name,
+          parents: folderId ? [folderId] : undefined,
+        }),
+      }
+    );
 
-      const media = {
-        mimeType: file.mimetype,
-        body: fs.createReadStream(file.filepath),
-      };
+    if (!initRes.ok) {
+      const text = await initRes.text();
+      console.error('Resumable oturum hatası:', text);
+      return res.status(500).json({ error: 'Yükleme oturumu oluşturulamadı.' });
+    }
 
-      return drive.files.create({
-        requestBody: fileMetadata,
-        media: media,
-        fields: 'id',
-      });
-    });
-
-    await Promise.all(uploadPromises);
-
-    return res.status(200).json({ success: true, message: 'Yükleme başarılı!' });
+    const uploadUrl = initRes.headers.get('location');
+    return res.status(200).json({ uploadUrl });
   } catch (error) {
-    console.error('Drive Yükleme Hatası:', error);
-    return res.status(500).json({ error: error.message || 'Yükleme sırasında bir hata oluştu.' });
+    console.error('Oturum hatası:', error);
+    return res.status(500).json({ error: error.message || 'Bir hata oluştu.' });
   }
 }
