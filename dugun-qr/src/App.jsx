@@ -51,6 +51,7 @@ export default function App() {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
+        <img src="/names.png" alt="Elif & Berkay" style={styles.names} />
         <h1 style={styles.title}>📸 Hoş Geldiniz!</h1>
         <p style={styles.subtitle}>
           En güzel anılarımızı bizimle paylaşmak için fotoğraflarınızı aşağıdan yükleyebilirsiniz.
@@ -93,7 +94,12 @@ export default function App() {
 const styles = {
   container: {
     minHeight: '100vh',
-    backgroundColor: '#f4f1ea',
+    backgroundColor: '#fffdf7',
+    backgroundImage: "url('/background.png')",
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    backgroundAttachment: 'fixed',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -109,6 +115,7 @@ const styles = {
     textAlign: 'center',
     boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
   },
+  names: { width: '80%', maxWidth: '260px', height: 'auto', display: 'block', margin: '0 auto 16px' },
   title: { fontSize: '24px', color: '#2c3e50', marginBottom: '10px' },
   subtitle: { fontSize: '14px', color: '#666', marginBottom: '25px', lineHeight: '1.5' },
   form: { display: 'flex', flexDirection: 'column', gap: '15px' },
@@ -123,7 +130,7 @@ const styles = {
   },
   button: {
     padding: '14px',
-    backgroundColor: '#27ae60',
+    backgroundColor: '#675815',
     color: '#fff',
     border: 'none',
     borderRadius: '10px',
