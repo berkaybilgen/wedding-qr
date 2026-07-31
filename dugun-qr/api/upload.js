@@ -31,6 +31,11 @@ export default async function handler(req, res) {
     const { token } = await oauth2Client.getAccessToken();
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
+    // Tarayıcının Origin'i: oturumu bununla açmazsak Google, tarayıcının
+    // doğrudan yaptığı PUT yanıtına CORS başlığı koymaz ve yükleme %100
+    // olsa bile tarayıcı yanıtı okuyamayıp hata verir.
+    const origin = req.headers.origin;
+
     // Drive'da resumable oturumu başlat; dönen "Location" başlığı yükleme linkidir
     const initRes = await fetch(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
@@ -40,6 +45,8 @@ export default async function handler(req, res) {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json; charset=UTF-8',
           'X-Upload-Content-Type': mimeType || 'application/octet-stream',
+          // Google'ın CORS başlığını yükleme yanıtına da koyması için şart
+          ...(origin ? { Origin: origin } : {}),
         },
         body: JSON.stringify({
           name,

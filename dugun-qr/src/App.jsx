@@ -71,7 +71,7 @@ export default function App() {
               uploadedBytes += file.size;
               resolve();
             } else {
-              reject(new Error('Dosya yüklenemedi.'));
+              reject(new Error(`Dosya yüklenemedi (kod ${xhr.status}).`));
             }
           };
 
